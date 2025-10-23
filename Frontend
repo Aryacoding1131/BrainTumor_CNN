@@ -1,0 +1,80 @@
+import os
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+import os
+import streamlit as st
+import tensorflow as tf
+from tensorflow.keras.preprocessing import image
+import numpy as np
+from groq import Groq
+
+# -------------------------------
+# Load CNN Model
+# -------------------------------
+MODEL_PATH = "D:/Projects/ML mini project/brain_tumor_model.h5"
+model = tf.keras.models.load_model(MODEL_PATH)
+IMG_SIZE = (150, 150)
+
+# -------------------------------
+# Groq AI LLM Setup
+# -------------------------------
+client = Groq(api_key="Place your own API key")
+
+def llm_response(user_message):
+    """Send a message to Groq LLM and return response"""
+    chat_completion = client.chat.completions.create(
+        model="llama-3.1-8b-instant",  # you can use llama3-70b-8192 if you want more powerful responses
+        messages=[
+            {"role": "system", "content": "You are a helpful AI medical assistant for brain MRI analysis. Always remind users that predictions are AI-based and not a medical diagnosis."},
+            {"role": "user", "content": user_message}
+        ],
+        temperature=0.6,
+        max_tokens=300
+    )
+    return chat_completion.choices[0].message.content
+
+# -------------------------------
+# CNN Prediction Function
+# -------------------------------
+def predict_image(img_path):
+    img = image.load_img(img_path, target_size=IMG_SIZE)
+    img_array = image.img_to_array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+
+    prediction = model.predict(img_array)[0][0]
+
+    result = "Tumor Detected" if prediction > 0.5 else "No Tumor Detected"
+    confidence = prediction if prediction > 0.5 else 1 - prediction
+    return result, confidence
+
+# -------------------------------
+# Streamlit App UI
+# -------------------------------
+st.set_page_config(page_title="Brain Tumor Chatbot", page_icon="🧠")
+st.title("🧠 Brain Tumor Detection Chatbot")
+st.write("Upload a brain MRI image and chat with the AI about the results.")
+st.write("Name: Arya Rohan Rachamalla")
+st.write("Reg no: 3122256002002")
+
+# File uploader
+uploaded_file = st.file_uploader("Upload MRI Image", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    file_path = os.path.join("temp_img.png")
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+
+    st.image(file_path, caption="Uploaded MRI Image", use_column_width=True)
+
+    if st.button("🔍 Analyze MRI"):
+        result, confidence = predict_image(file_path)
+        st.success(f"Prediction: **{result}**")
+        st.info(f"Confidence: {confidence:.2f}")
+
+        # Pass prediction to Groq AI
+        ai_message = llm_response(
+            f"The CNN model prediction is: {result} with confidence {confidence:.2f}. "
+            "Please explain this result to the patient in simple language."
+        )
+        st.markdown("### 🤖 AI Assistant Response")
+        st.write(ai_message)
